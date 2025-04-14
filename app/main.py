@@ -47,6 +47,16 @@ def add_sidebar():
         ("Symmetry (worst)", "symmetry_worst"),
         ("Fractal dimension (worst)", "fractal_dimension_worst"),
     ]
+    
+    input_dict = {}
+    
+    for label, key in slider_labels:
+        st.sidebar.slider(
+            label,
+            min_value=float (0),
+            max_value=float (data[key].max()),
+            value=float (data[key].mean()),
+        )
 def main ():
     st.set_page_config( 
         page_title="CancerIA",
