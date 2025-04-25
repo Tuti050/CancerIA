@@ -16,7 +16,7 @@ def get_clean_data():
 
 
 def add_sidebar():
-    st.sidebar.header("Cell Nuclei Measurements")
+    st.sidebar.header(" Measurements")
     
     data = get_clean_data()
     
