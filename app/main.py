@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.main import extrair_medidas_da_imagem
+from model.mainmodel import extrair_medidas_da_imagem
 
 
 def get_clean_data():
