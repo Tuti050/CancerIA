@@ -8,6 +8,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
+import joblib
+import numpy as np
+from PIL import Image
+
+
+modelo = joblib.load("model/image.pkl")
 
 def create_model(data): 
   X = data.drop(['diagnosis'], axis=1)
@@ -50,6 +56,21 @@ def main():
     
   with open('model/scaler.pkl', 'wb') as f:
     pickle.dump(scaler, f)
+    
+  with open('model/image.pkl', 'wb') as f:
+    pickle.dump(Image, f)
+
+
+def extrair_medidas_da_imagem(img: Image.Image) -> dict:
+    img = img.resize((64, 64)).convert("L")
+    vetor = np.array(img).flatten().reshape(1, -1)
+    saida = modelo.predict(vetor)[0]
+
+    return {
+        "radius_mean": float(saida[0]),
+        "texture_mean": float(saida[1]),
+        "perimeter_mean": float(saida[2])
+    }
 
 
 
