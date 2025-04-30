@@ -207,29 +207,12 @@ def atualizar_measurements(medidas: dict):
 
 uploaded_image = st.file_uploader("Envie uma imagem de mamografia", type=["jpg", "png", "jpeg"])
 
-st.markdown("""
-    <style>
-        div.stButton > button#stFloatingButton {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background-color: #4CAF50;
-            color: white;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            font-size: 20px;
-            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
 if st.button("Usar imagem", key="stFloatingButton"):
     if uploaded_image:
         image = Image.open(uploaded_image)
         try:
             medidas_extraidas = extrair_medidas_da_imagem(image)
-            atualizar_measurements(medidas_extraidas)  # Atualiza as medições no session_state
+            atualizar_measurements(medidas_extraidas)  
             st.success(f"Medidas extraídas da imagem: {medidas_extraidas}")
         except Exception as e:
             st.error(f"Erro ao processar imagem: {e}")
