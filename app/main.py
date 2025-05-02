@@ -1,5 +1,5 @@
 import streamlit as st
-import pickle
+import joblib
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
@@ -149,11 +149,10 @@ def get_radar_chart(input_data):
 
 
 def add_predictions(input_data):
-    model = pickle.load(open("model/model.pkl", "rb"))
-    scaler = pickle.load(open("model/scaler.pkl", "rb"))
-
-    input_array = np.array(list(input_data.values())).reshape(1, -1)
-    input_array_scaled = scaler.transform(input_array)
+    model = joblib.load('model/model.pkl')
+    scaler = joblib.load( 'model/scaler.pkl')    
+    input_df = pd.DataFrame([input_data])
+    input_array_scaled = scaler.transform(input_df)
     prediction = model.predict(input_array_scaled)
 
     st.subheader("Cell cluster prediction")
@@ -190,19 +189,19 @@ def main():
             "on the measurements it receives from your cytosis lab. You can also update the measurements by hand "
             "using the sliders in the sidebar.")
 
-    uploaded_image = st.file_uploader("Envie uma imagem de mamografia", type=["jpg", "png", "jpeg"])
+    uploaded_image = st.file_uploader("Send an mamography image", type=["jpg", "png", "jpeg"])
 
-    if st.button("Usar imagem", key="stFloatingButton"):
+    if st.button("Use image", key="stFloatingButton"):
         if uploaded_image:
             image = Image.open(uploaded_image)
             try:
                 medidas_extraidas = extrair_medidas_da_imagem(image)
                 atualizar_measurements(medidas_extraidas)
-                st.success(f"Medidas extraídas da imagem: {medidas_extraidas}")
+                st.success(f"Measurements extracted: {medidas_extraidas}")
             except Exception as e:
-                st.error(f"Erro ao processar imagem: {e}")
+                st.error(f"Error in processing image: {e}")
         else:
-            st.warning("Por favor, envie uma imagem antes de usar esse botão.")
+            st.warning("Please, send an image before using this button.")
 
     input_data = add_sidebar()
 
