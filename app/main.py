@@ -75,6 +75,15 @@ def add_sidebar():
 
     return input_dict
 
+def atualizar_measurements(medidas: dict):
+    st.session_state.radius_mean = medidas["radius_mean"]
+    st.session_state.texture_mean = medidas["texture_mean"]
+    st.session_state.perimeter_mean = medidas["perimeter_mean"]
+
+    for key, value in medidas.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
 
 def get_scaled_values(input_dict):
     data = get_clean_data()
@@ -169,14 +178,7 @@ def add_predictions(input_data):
             "but should not be used as a substitute for a professional diagnosis.")
 
 
-def atualizar_measurements(medidas: dict):
-    st.session_state.radius_mean = medidas["radius_mean"]
-    st.session_state.texture_mean = medidas["texture_mean"]
-    st.session_state.perimeter_mean = medidas["perimeter_mean"]
 
-    for key, value in medidas.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
 
 
 def main():
