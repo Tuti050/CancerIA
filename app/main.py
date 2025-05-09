@@ -191,7 +191,7 @@ def main():
             "on the measurements it receives from your cytosis lab. You can also update the measurements by hand "
             "using the sliders in the sidebar.")
 
-    uploaded_image = st.file_uploader("Send an mamography image", type=["jpg", "png", "jpeg"])
+    uploaded_image = st.file_uploader("Send a mamography image", type=["jpg", "png", "jpeg"])
 
     if st.button("Use image", key="stFloatingButton"):
         if uploaded_image:
