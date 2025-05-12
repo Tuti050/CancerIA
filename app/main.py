@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 import sys
 import os
+from model.mainmodel import extrair_medidas_da_imagem
 
 st.set_page_config(
     page_title="MamamIA",
@@ -15,7 +16,6 @@ st.set_page_config(
 )
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.mainmodel import extrair_medidas_da_imagem
 
 
 def get_clean_data():
