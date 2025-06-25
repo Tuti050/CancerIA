@@ -71,7 +71,7 @@ def add_sidebar():
             label,
             min_value=float(0),
             max_value=float(data[key].max()),
-            value=float(data[key].mean())
+            value=value
         )
 
     return input_dict
