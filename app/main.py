@@ -8,6 +8,14 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from model.mainmodel import extrair_medidas_da_imagem
+from fpdf import FPDF
+import base64
+import sklearn
+print(sklearn.__version__)
+from streamlit.runtime.scriptrunner import RerunException
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+import streamlit as st
+
 
 st.set_page_config(
     page_title="MamamIA",
@@ -27,7 +35,7 @@ def get_clean_data():
 
 
 def add_sidebar():
-    st.sidebar.header(" Measurements")
+    st.sidebar.header("🔬 Ajuste das Medidas")
     data = get_clean_data()
 
     slider_labels = [
@@ -65,16 +73,41 @@ def add_sidebar():
 
     input_dict = {}
 
-    for label, key in slider_labels:
-        value = st.session_state.get(key, float(data[key].mean()))
-        input_dict[key] = st.sidebar.slider(
-            label,
-            min_value=float(0),
-            max_value=float(data[key].max()),
-            value=value
-        )
+    with st.sidebar.expander("📊 Médias (Mean)"):
+        for label, key in slider_labels:
+            if key.endswith("_mean"):
+                value = st.session_state.get(key, float(data[key].mean()))
+                input_dict[key] = st.slider(
+                    label,
+                    min_value=0.0,
+                    max_value=float(data[key].max()),
+                    value=value
+                )
+
+    with st.sidebar.expander("📈 Erro Padrão (SE)"):
+        for label, key in slider_labels:
+            if key.endswith("_se"):
+                value = st.session_state.get(key, float(data[key].mean()))
+                input_dict[key] = st.slider(
+                    label,
+                    min_value=0.0,
+                    max_value=float(data[key].max()),
+                    value=value
+                )
+
+    with st.sidebar.expander("⚠️ Piores Casos (Worst)"):
+        for label, key in slider_labels:
+            if key.endswith("_worst"):
+                value = st.session_state.get(key, float(data[key].mean()))
+                input_dict[key] = st.slider(
+                    label,
+                    min_value=0.0,
+                    max_value=float(data[key].max()),
+                    value=value
+                )
 
     return input_dict
+
 
 def atualizar_measurements(medidas: dict):
     st.session_state.radius_mean = medidas["radius_mean"]
@@ -178,6 +211,26 @@ def add_predictions(input_data):
     st.write("This app can assist medical professionals in making a diagnosis, "
             "but should not be used as a substitute for a professional diagnosis.")
 
+def gerar_pdf(input_data, predicao, prob_benigno, prob_maligno):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+
+    pdf.cell(200, 10, txt="Relatório MamamIA", ln=True, align="C")
+    pdf.ln(10)
+
+    pdf.cell(200, 10, txt=f"Predição: {'Benigno' if predicao == 0 else 'Maligno'}", ln=True)
+    pdf.cell(200, 10, txt=f"Probabilidade Benigno: {prob_benigno:.2f}", ln=True)
+    pdf.cell(200, 10, txt=f"Probabilidade Maligno: {prob_maligno:.2f}", ln=True)
+
+    pdf.ln(10)
+    pdf.cell(200, 10, txt="Medições:", ln=True)
+    for key, val in input_data.items():
+        pdf.cell(200, 10, txt=f"{key}: {val:.2f}", ln=True)
+
+    file_path = "relatorio_mamamia.pdf"
+    pdf.output(file_path)
+    return file_path
 
 
 
@@ -193,18 +246,30 @@ def main():
             "using the sliders in the sidebar.")
 
     uploaded_image = st.file_uploader("Send a mamography image", type=["jpg", "png", "jpeg"])
+    if uploaded_image:
+        st.image(uploaded_image, caption="Mamografia enviada", use_column_width=True)
+
 
     if st.button("Use image", key="stFloatingButton"):
         if uploaded_image:
             image = Image.open(uploaded_image)
-            try:
-                medidas_extraidas = extrair_medidas_da_imagem(image)
-                atualizar_measurements(medidas_extraidas)
-                st.success(f"Measurements extracted: {medidas_extraidas}")
-            except Exception as e:
-                st.error(f"Error in processing image: {e}")
+            with st.spinner("Processando imagem e extraindo medidas..."):
+                try:
+                    medidas_extraidas = extrair_medidas_da_imagem(image)
+                    atualizar_measurements(medidas_extraidas)
+                    try:
+                        medidas_extraidas = extrair_medidas_da_imagem(image)
+                        atualizar_measurements(medidas_extraidas)
+                        st.success(f"Medições extraídas: {medidas_extraidas}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao processar a imagem: {e}")
+                    st.success(f"Medições extraídas: {medidas_extraidas}")
+                except Exception as e:
+                    st.error(f"Erro ao processar a imagem: {e}")
         else:
-            st.warning("Please, send an image before using this button.")
+            st.warning("Por favor, envie uma imagem antes de usar esse botão.")
+
 
     input_data = add_sidebar()
 
@@ -215,6 +280,21 @@ def main():
         st.plotly_chart(radar_chart)
     with col2:
         add_predictions(input_data)
+        model = joblib.load('model/model.pkl')
+    scaler = joblib.load('model/scaler.pkl')
+    input_df = pd.DataFrame([input_data])
+    input_array_scaled = scaler.transform(input_df)
+    prediction = model.predict(input_array_scaled)[0]
+    prob_benigno = model.predict_proba(input_array_scaled)[0][0]
+    prob_maligno = model.predict_proba(input_array_scaled)[0][1]
+
+    if st.button("Gerar relatório PDF"):
+        pdf_path = gerar_pdf(input_data, prediction, prob_benigno, prob_maligno)
+        with open(pdf_path, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        href = f'<a href="data:application/octet-stream;base64,{base64_pdf}" download="relatorio_mamamia.pdf">📄 Baixar Relatório PDF</a>'
+        st.markdown(href, unsafe_allow_html=True)
+
 
 
 if __name__ == '__main__':
