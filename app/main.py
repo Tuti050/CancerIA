@@ -258,8 +258,6 @@ def main():
                     medidas_extraidas = extrair_medidas_da_imagem(image)
                     atualizar_measurements(medidas_extraidas)
                     try:
-                        medidas_extraidas = extrair_medidas_da_imagem(image)
-                        atualizar_measurements(medidas_extraidas)
                         st.success(f"Medições extraídas: {medidas_extraidas}")
                         st.rerun()
                     except Exception as e:
