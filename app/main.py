@@ -14,8 +14,18 @@ import sklearn
 print(sklearn.__version__)
 from streamlit.runtime.scriptrunner import RerunException
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-import streamlit as st
-
+import joblib
+import pandas as pd
+import plotly.graph_objects as go
+from PIL import Image as PILImage
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet
+import sqlite3
+import base64
+import tempfile
+from datetime import datetime
+import getpass
 
 st.set_page_config(
     page_title="MamamIA",
@@ -79,7 +89,7 @@ def add_sidebar():
                 value = st.session_state.get(key, float(data[key].mean()))
                 input_dict[key] = st.slider(
                     label,
-                    min_value=0.0,
+                    min_value=float(0.0),
                     max_value=float(data[key].max()),
                     value=value
                 )
@@ -90,7 +100,7 @@ def add_sidebar():
                 value = st.session_state.get(key, float(data[key].mean()))
                 input_dict[key] = st.slider(
                     label,
-                    min_value=0.0,
+                    min_value=float(0.0),
                     max_value=float(data[key].max()),
                     value=value
                 )
@@ -101,7 +111,7 @@ def add_sidebar():
                 value = st.session_state.get(key, float(data[key].mean()))
                 input_dict[key] = st.slider(
                     label,
-                    min_value=0.0,
+                    min_value=float(0.0),
                     max_value=float(data[key].max()),
                     value=value
                 )
@@ -210,90 +220,312 @@ def add_predictions(input_data):
     st.write("Probability of being malicious: ", model.predict_proba(input_array_scaled)[0][1])
     st.write("This app can assist medical professionals in making a diagnosis, "
             "but should not be used as a substitute for a professional diagnosis.")
+# ========== Banco de dados ==========
+def conectar_banco():
+    conn = sqlite3.connect("banco.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS relatorios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome_paciente TEXT,
+            idade INTEGER,
+            tipo_sanguineo TEXT,
+            nome_medico TEXT,
+            resultado TEXT,
+            diagnostico TEXT,
+            data_criacao TEXT,
+            nome_arquivo TEXT
+        )
+    """)
+    conn.commit()
+    return conn
 
-def gerar_pdf(input_data, predicao, prob_benigno, prob_maligno):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
+def salvar_em_banco(dados, nome_pdf):
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO relatorios (
+            nome_paciente, idade, tipo_sanguineo, nome_medico, resultado,
+            diagnostico, data_criacao, nome_arquivo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        dados.get('nome_paciente', ''),
+        dados.get('idade', None),
+        dados.get('tipo_sanguineo', ''),
+        dados.get('nome_medico', ''),
+        dados.get('resultado', ''),
+        dados.get('diagnostico', ''),
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        nome_pdf
+    ))
+    conn.commit()
+    conn.close()
 
-    pdf.cell(200, 10, txt="Relatório MamamIA", ln=True, align="C")
-    pdf.ln(10)
+def buscar_relatorios(nome):
+    # Conectar ao banco de dados
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    
+    # Realizar a busca no banco
+    cursor.execute("SELECT nome_paciente, nome_arquivo, data_criacao FROM relatorios WHERE nome_paciente LIKE ?", (f"%{nome}%",))
+    resultados = cursor.fetchall()
+    conn.close()
 
-    pdf.cell(200, 10, txt=f"Predição: {'Benigno' if predicao == 0 else 'Maligno'}", ln=True)
-    pdf.cell(200, 10, txt=f"Probabilidade Benigno: {prob_benigno:.2f}", ln=True)
-    pdf.cell(200, 10, txt=f"Probabilidade Maligno: {prob_maligno:.2f}", ln=True)
+    return resultados
 
-    pdf.ln(10)
-    pdf.cell(200, 10, txt="Medições:", ln=True)
-    for key, val in input_data.items():
-        pdf.cell(200, 10, txt=f"{key}: {val:.2f}", ln=True)
+def verificar_senha():
+    # Aqui você pode usar uma senha fixa ou verificar contra um banco de dados de usuários
+    senha_correta = "senha123"  # Defina aqui a senha para acesso
 
-    file_path = "relatorio_mamamia.pdf"
-    pdf.output(file_path)
-    return file_path
+    # Solicitar a senha ao usuário
+    senha = getpass.getpass("Digite a senha para acessar o relatório: ")
+
+    # Verificar se a senha está correta
+    if senha == senha_correta:
+        return True
+    else:
+        print("Senha incorreta. Acesso negado.")
+        return False
+
+def acessar_relatorio(nome_paciente):
+    # Buscar relatórios do paciente
+    relatorios = buscar_relatorios(nome_paciente)
+
+    if not relatorios:
+        print("Nenhum relatório encontrado para o paciente.")
+        return
+
+    print(f"Relatórios encontrados para {nome_paciente}:")
+    for index, relatorio in enumerate(relatorios, 1):
+        nome_paciente_db, nome_arquivo, data_criacao = relatorio
+        print(f"{index}. Nome do paciente: {nome_paciente_db}, Arquivo: {nome_arquivo}, Data: {data_criacao}")
+
+    # Solicitar que o usuário escolha um relatório para acessar
+    escolha = int(input("Escolha o número do relatório para acessar: ")) - 1
+
+    if 0 <= escolha < len(relatorios):
+        relatorio = relatorios[escolha]
+        nome_arquivo = relatorio[1]
+
+        # Verificar senha para acessar o PDF
+        if verificar_senha():
+            # Lógica para o download ou visualização do PDF
+            print(f"Você tem acesso ao relatório: {nome_arquivo}")
+            # Aqui você pode implementar o código para servir o PDF
+            # Exemplo: download_pdf(nome_arquivo)
+        else:
+            print("Acesso negado ao relatório.")
+    else:
+        print("Opção inválida.")
 
 
+def gerar_pdf(dados):
+    """Gera PDF estilo relatório, salva no diretório pdfs e grava no DB."""
+    nome_pdf = f"{dados.get('nome_paciente','Paciente') .replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    caminho_pdf = os.path.join("pdfs", nome_pdf)
 
+    doc = SimpleDocTemplate(caminho_pdf, pagesize=A4)
+    estilos = getSampleStyleSheet()
+    conteudo = []
+
+    conteudo.append(Paragraph("Relatório da Mamografia", estilos['Title']))
+    conteudo.append(Spacer(1, 12))
+
+    conteudo.append(Paragraph(f"<b>Nome da paciente:</b> {dados.get('nome_paciente','')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Idade:</b> {dados.get('idade','')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Tipo sanguíneo:</b> {dados.get('tipo_sanguineo','')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Data de geração:</b> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Médico responsável:</b> Dr(a). {dados.get('nome_medico','')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Resultado:</b> {dados.get('resultado','')}", estilos['BodyText']))
+    conteudo.append(Paragraph(f"<b>Diagnóstico:</b> {dados.get('diagnostico','')}", estilos['BodyText']))
+    conteudo.append(Spacer(1, 12))
+
+    # Medidas
+    conteudo.append(Paragraph("<b>Medições extraídas:</b>", estilos['Heading3']))
+    medidas = dados.get('medidas', {})
+    for key, val in medidas.items():
+        try:
+            conteudo.append(Paragraph(f"{key}: {float(val):.4f}", estilos['BodyText']))
+        except:
+            conteudo.append(Paragraph(f"{key}: {val}", estilos['BodyText']))
+    conteudo.append(Spacer(1, 12))
+
+    # Imagens: criar temp files para ReportLab
+    imagens = dados.get('imagens', [])
+    for idx, img_path in enumerate(imagens):
+        try:
+            pil_img = PILImage.open(img_path)
+            pil_img.thumbnail((800, 800))
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            pil_img.save(tmp.name, format='JPEG')
+            tmp.close()
+            conteudo.append(Image(tmp.name, width=300, height=300))
+            conteudo.append(Spacer(1, 12))
+        except Exception as e:
+            conteudo.append(Paragraph(f"Erro ao inserir imagem {img_path}: {e}", estilos['BodyText']))
+
+    doc.build(conteudo)
+
+    # salvar no DB
+    salvar_em_banco(dados, nome_pdf)
+    return caminho_pdf
+
+# ========== Funções de dados e visualização ==========
+def get_clean_data():
+    try:
+        data = pd.read_csv("data/data.csv")
+        data = data.drop(['Unnamed: 32', 'id'], axis=1)
+        data['diagnosis'] = data['diagnosis'].map({'M': 1, 'B': 0})
+        return data
+    except Exception as e:
+        st.warning("Não foi possível carregar data/data.csv. Algumas funcionalidades (sliders automáticos) podem falhar.")
+        raise
+
+def carregar_modelo():
+    model = joblib.load('model/model.pkl')
+    scaler = joblib.load('model/scaler.pkl')
+    return model, scaler
+
+def add_predictions_display(input_data):
+    try:
+        model, scaler = carregar_modelo()
+    except Exception as e:
+        st.error(f"Erro ao carregar modelo: {e}")
+        return None, None, None
+
+    input_df = pd.DataFrame([input_data])
+    try:
+        input_array_scaled = scaler.transform(input_df)
+    except Exception as e:
+        st.error(f"Erro ao aplicar scaler: {e}")
+        return None, None, None
+
+    prediction = model.predict(input_array_scaled)[0]
+    prob = model.predict_proba(input_array_scaled)[0]
+    prob_benigno = prob[0]
+    prob_maligno = prob[1]
+
+    st.subheader("Predição")
+    st.write("Cluster celular previsto:")
+    if prediction == 0:
+        st.markdown("<span style='color:green;font-weight:bold'>Benigno</span>", unsafe_allow_html=True)
+    else:
+        st.markdown("<span style='color:red;font-weight:bold'>Maligno</span>", unsafe_allow_html=True)
+
+    st.write(f"Probabilidade Benigno: {prob_benigno:.4f}")
+    st.write(f"Probabilidade Maligno: {prob_maligno:.4f}")
+
+    st.info("Este sistema é suporte — não substitui um laudo médico profissional.")
+    return prediction, prob_benigno, prob_maligno
 
 def main():
-    with open("assets/style.css") as f:
-        st.markdown("<style>{}</style>".format(f.read()), unsafe_allow_html=True)
+    st.title("🧬 MamamIA - Diagnóstico e Relatórios")
 
-    st.title("MamamIA")
-    st.write("Please connect this app to your cytology lab to help diagnose breast cancer from your tissue sample. "
-            "This app predicts using a machine learning model whether a breast mass is benign or malignant based "
-            "on the measurements it receives from your cytosis lab. You can also update the measurements by hand "
-            "using the sliders in the sidebar.")
+    aba = st.sidebar.radio("Navegação", ["Novo exame", "Buscar relatórios"])
 
-    uploaded_image = st.file_uploader("Send a mamography image", type=["jpg", "png", "jpeg"])
-    if uploaded_image:
-        st.image(uploaded_image, caption="Mamografia enviada", use_column_width=True)
+    if aba == "Buscar relatórios":
+        st.header("Buscar relatórios por paciente")
+        nome_busca = st.text_input("Nome da paciente para buscar")
+        if st.button("Buscar"):
+            resultados = buscar_relatorios(nome_busca)
+            if resultados:
+                for r in resultados:
+                    st.write(f"Paciente: {r[0]} | Data: {r[2]}")
+                    pdf_file = os.path.join("pdfs", r[1])
+                    if os.path.exists(pdf_file):
+                        with open(pdf_file, "rb") as f:
+                            st.download_button(label=f"📄 Baixar {r[1]}", data=f, file_name=r[1], mime="application/pdf")
+                    else:
+                        st.write("Arquivo PDF não encontrado no diretório `pdfs/`.")
+            else:
+                st.warning("Nenhum relatório encontrado.")
+        return
 
+    # aba Novo exame
+    st.write("Envie uma imagem ou ajuste manualmente as medidas na barra lateral.")
+    col_left, col_right = st.columns([2, 1])
 
-    if st.button("Use image", key="stFloatingButton"):
+    # sidebar sliders
+    try:
+        input_data = add_sidebar()
+    except Exception as e:
+        st.error("Erro ao construir sliders: verifique data/data.csv")
+        input_data = {}
+
+    with col_left:
+        st.subheader("Imagem")
+        uploaded_image = st.file_uploader("Envie a mamografia (jpg/png/jpeg)", type=["jpg", "png", "jpeg"])
         if uploaded_image:
-            image = Image.open(uploaded_image)
-            with st.spinner("Processando imagem e extraindo medidas..."):
+            st.image(uploaded_image, caption="Imagem carregada", use_column_width=True)
+
+        if st.button("Usar imagem para extrair medidas"):
+            if not uploaded_image:
+                st.warning("Primeiro envie uma imagem.")
+            else:
+                # salvar imagem em disco
+                img_path = os.path.join("imagens", uploaded_image.name)
+                with open(img_path, "wb") as f:
+                    f.write(uploaded_image.getbuffer())
                 try:
-                    medidas_extraidas = extrair_medidas_da_imagem(image)
-                    atualizar_measurements(medidas_extraidas)
-                    try:
-                        st.success(f"Medições extraídas: {medidas_extraidas}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao processar a imagem: {e}")
-                    st.success(f"Medições extraídas: {medidas_extraidas}")
+                    pil_img = PILImage.open(img_path)
+                    medidas_extraidas = extrair_medidas_da_imagem(pil_img)
+                    atualizar_measurements(medidas_extraidas)  # atualiza session_state
+                    st.success("Medições extraídas e atualizadas nos sliders.")
+                    # sobrescreve input_data com as extraídas
+                    input_data = medidas_extraidas
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Erro ao processar a imagem: {e}")
-        else:
-            st.warning("Por favor, envie uma imagem antes de usar esse botão.")
+                    st.error(f"Erro ao extrair medidas da imagem: {e}")
 
+        # mostrar radar
+        if input_data:
+            try:
+                fig = get_radar_chart(input_data)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao gerar radar chart: {e}")
 
-    input_data = add_sidebar()
+    with col_right:
+        st.subheader("Paciente & Relatório")
+        nome_paciente = st.text_input("Nome da paciente", value=st.session_state.get("nome_paciente", ""))
+        idade = st.number_input("Idade", min_value=0, max_value=120, value=int(st.session_state.get("idade", 0) or 0))
+        tipo_sanguineo = st.text_input("Tipo sanguíneo", value=st.session_state.get("tipo_sanguineo",""))
+        nome_medico = st.text_input("Nome do médico", value=st.session_state.get("nome_medico",""))
 
-    col1, col2 = st.columns([4, 1])
+        st.markdown("---")
+        st.write("Predição com o modelo (usando as medidas atuais)")
+        pred, pb, pm = add_predictions_display(input_data) if input_data else (None, None, None)
 
-    with col1:
-        radar_chart = get_radar_chart(input_data)
-        st.plotly_chart(radar_chart)
-    with col2:
-        add_predictions(input_data)
-        model = joblib.load('model/model.pkl')
-    scaler = joblib.load('model/scaler.pkl')
-    input_df = pd.DataFrame([input_data])
-    input_array_scaled = scaler.transform(input_df)
-    prediction = model.predict(input_array_scaled)[0]
-    prob_benigno = model.predict_proba(input_array_scaled)[0][0]
-    prob_maligno = model.predict_proba(input_array_scaled)[0][1]
+        if st.button("Gerar relatório PDF"):
+            if not input_data:
+                st.warning("Não há medidas para gerar o relatório. Use uma imagem ou ajuste os sliders.")
+            else:
+                # criar dict de dados para o PDF
+                imagens_list = []
+                # se houve upload, priorizar a imagem salva; tentar achar última imagem na pasta 'imagens' com nome do upload
+                if uploaded_image:
+                    img_path = os.path.join("imagens", uploaded_image.name)
+                    if os.path.exists(img_path):
+                        imagens_list.append(img_path)
 
-    if st.button("Gerar relatório PDF"):
-        pdf_path = gerar_pdf(input_data, prediction, prob_benigno, prob_maligno)
-        with open(pdf_path, "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        href = f'<a href="data:application/octet-stream;base64,{base64_pdf}" download="relatorio_mamamia.pdf">📄 Baixar Relatório PDF</a>'
-        st.markdown(href, unsafe_allow_html=True)
-
-
+                dados_pdf = {
+                    "nome_paciente": nome_paciente or "Paciente_sem_nome",
+                    "idade": int(idade) if idade else None,
+                    "tipo_sanguineo": tipo_sanguineo,
+                    "nome_medico": nome_medico,
+                    "resultado": "Benigno" if pred == 0 else ("Maligno" if pred == 1 else "Desconhecido"),
+                    "diagnostico": "Maligno" if pred == 1 else ("Benigno" if pred == 0 else "Indeterminado"),
+                    "medidas": input_data,
+                    "imagens": imagens_list
+                }
+                try:
+                    pdf_path = gerar_pdf(dados_pdf)
+                    st.success(f"PDF gerado: {pdf_path}")
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(label="📄 Baixar PDF", data=f, file_name=os.path.basename(pdf_path), mime="application/pdf")
+                except Exception as e:
+                    st.error(f"Erro ao gerar PDF: {e}")
 
 if __name__ == '__main__':
     main()
+    #usar no terminal "python -m streamlit run app/main.py" para inicializar o codigo
