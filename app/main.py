@@ -1,31 +1,38 @@
-import streamlit as st
-import joblib
-import pandas as pd
-import plotly.graph_objects as go
-import numpy as np
-from PIL import Image
-import sys
+# Bibliotecas padrão
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.mainmodel import extrair_medidas_da_imagem
-from fpdf import FPDF
-import base64
-import sklearn
-print(sklearn.__version__)
-from streamlit.runtime.scriptrunner import RerunException
-from streamlit.runtime.scriptrunner import get_script_run_ctx
-import joblib
-import pandas as pd
-import plotly.graph_objects as go
-from PIL import Image as PILImage
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet
-import sqlite3
+import sys
 import base64
 import tempfile
+import sqlite3
+from io import BytesIO
 from datetime import datetime
 import getpass
+
+# Bibliotecas de terceiros
+import streamlit as st
+from streamlit.runtime.scriptrunner import RerunException, get_script_run_ctx
+import joblib
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from PIL import Image  # Usando o nome padrão
+from PIL import Image as PILImage  # Se você realmente precisar de ambos, pode manter assim
+import sklearn
+from fpdf import FPDF
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet
+
+# Módulo local
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from model.mainmodel import extrair_medidas_da_imagem
+
+# Exibir a versão do sklearn
+print(sklearn.__version__)
+
+
+
 
 st.set_page_config(
     page_title="MamamIA",
@@ -45,7 +52,7 @@ def get_clean_data():
 
 
 def add_sidebar():
-    st.sidebar.header("🔬 Ajuste das Medidas")
+    st.sidebar.header("Measurements adjustments")
     data = get_clean_data()
 
     slider_labels = [
@@ -83,50 +90,31 @@ def add_sidebar():
 
     input_dict = {}
 
-    with st.sidebar.expander("📊 Médias (Mean)"):
+    with st.sidebar.expander("Mean Values"):
         for label, key in slider_labels:
-            if key.endswith("_mean"):
+            if key.endswith("mean"):
                 value = st.session_state.get(key, float(data[key].mean()))
-                input_dict[key] = st.slider(
-                    label,
-                    min_value=float(0.0),
-                    max_value=float(data[key].max()),
-                    value=value
-                )
+                input_dict[key] = st.slider(label, 0.0, float(data[key].max()), value)
 
-    with st.sidebar.expander("📈 Erro Padrão (SE)"):
+    with st.sidebar.expander("Standard Error"):
         for label, key in slider_labels:
-            if key.endswith("_se"):
+            if key.endswith("se"):
                 value = st.session_state.get(key, float(data[key].mean()))
-                input_dict[key] = st.slider(
-                    label,
-                    min_value=float(0.0),
-                    max_value=float(data[key].max()),
-                    value=value
-                )
+                input_dict[key] = st.slider(label, 0.0, float(data[key].max()), value)
 
-    with st.sidebar.expander("⚠️ Piores Casos (Worst)"):
+    with st.sidebar.expander("Worst Cases"):
         for label, key in slider_labels:
-            if key.endswith("_worst"):
+            if key.endswith("worst"):
                 value = st.session_state.get(key, float(data[key].mean()))
-                input_dict[key] = st.slider(
-                    label,
-                    min_value=float(0.0),
-                    max_value=float(data[key].max()),
-                    value=value
-                )
+                input_dict[key] = st.slider(label, 0.0, float(data[key].max()), value)
 
+        
     return input_dict
 
 
 def atualizar_measurements(medidas: dict):
-    st.session_state.radius_mean = medidas["radius_mean"]
-    st.session_state.texture_mean = medidas["texture_mean"]
-    st.session_state.perimeter_mean = medidas["perimeter_mean"]
-
     for key, value in medidas.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+        st.session_state[key] = value
 
 
 def get_scaled_values(input_dict):
@@ -145,48 +133,65 @@ def get_scaled_values(input_dict):
 
 
 def get_radar_chart(input_data):
-    input_data = get_scaled_values(input_data)
-
+    
     categories = ['Radius', 'Texture', 'Perimeter', 'Area',
                 'Smoothness', 'Compactness',
                 'Concavity', 'Concave Points',
                 'Symmetry', 'Fractal Dimension']
 
+    
+    mean_vals = [
+        input_data['radius_mean'], input_data['texture_mean'], input_data['perimeter_mean'],
+        input_data['area_mean'], input_data['smoothness_mean'], input_data['compactness_mean'],
+        input_data['concavity_mean'], input_data['concave points_mean'], input_data['symmetry_mean'],
+        input_data['fractal_dimension_mean']
+    ]
+    se_vals = [
+        input_data['radius_se'], input_data['texture_se'], input_data['perimeter_se'], input_data['area_se'],
+        input_data['smoothness_se'], input_data['compactness_se'], input_data['concavity_se'],
+        input_data['concave points_se'], input_data['symmetry_se'], input_data['fractal_dimension_se']
+    ]
+    worst_vals = [
+        input_data['radius_worst'], input_data['texture_worst'], input_data['perimeter_worst'],
+        input_data['area_worst'], input_data['smoothness_worst'], input_data['compactness_worst'],
+        input_data['concavity_worst'], input_data['concave points_worst'], input_data['symmetry_worst'],
+        input_data['fractal_dimension_worst']
+    ]
+
+    
+    def normalize_list(lst):
+        max_val = max(lst)
+        min_val = min(lst)
+        return [(v - min_val) / (max_val - min_val) if max_val != min_val else 0 for v in lst]
+
+    mean_scaled = normalize_list(mean_vals)
+    se_scaled = normalize_list(se_vals)
+    worst_scaled = normalize_list(worst_vals)
+
     fig = go.Figure()
 
     fig.add_trace(go.Scatterpolar(
-        r=[
-            input_data['radius_mean'], input_data['texture_mean'], input_data['perimeter_mean'],
-            input_data['area_mean'], input_data['smoothness_mean'], input_data['compactness_mean'],
-            input_data['concavity_mean'], input_data['concave points_mean'], input_data['symmetry_mean'],
-            input_data['fractal_dimension_mean']
-        ],
+        r=mean_scaled,
         theta=categories,
         fill='toself',
-        name='Mean Value'
+        name='Mean Value',
+        hovertemplate = [f"{cat}: {val:.4f}" for cat, val in zip(categories, mean_vals)] + ["<extra></extra>"]
     ))
 
     fig.add_trace(go.Scatterpolar(
-        r=[
-            input_data['radius_se'], input_data['texture_se'], input_data['perimeter_se'], input_data['area_se'],
-            input_data['smoothness_se'], input_data['compactness_se'], input_data['concavity_se'],
-            input_data['concave points_se'], input_data['symmetry_se'], input_data['fractal_dimension_se']
-        ],
+        r=se_scaled,
         theta=categories,
         fill='toself',
-        name='Standard Error'
+        name='Standard Error',
+        hovertemplate = [f"{cat}: {val:.4f}" for cat, val in zip(categories, se_vals)] + ["<extra></extra>"]
     ))
 
     fig.add_trace(go.Scatterpolar(
-        r=[
-            input_data['radius_worst'], input_data['texture_worst'], input_data['perimeter_worst'],
-            input_data['area_worst'], input_data['smoothness_worst'], input_data['compactness_worst'],
-            input_data['concavity_worst'], input_data['concave points_worst'], input_data['symmetry_worst'],
-            input_data['fractal_dimension_worst']
-        ],
+        r=worst_scaled,
         theta=categories,
         fill='toself',
-        name='Worst Value'
+        name='Worst Value',
+        hovertemplate = [f"{cat}: {val:.4f}" for cat, val in zip(categories, worst_vals)] + ["<extra></extra>"]
     ))
 
     fig.update_layout(
@@ -199,6 +204,7 @@ def get_radar_chart(input_data):
     )
 
     return fig
+
 
 
 def add_predictions(input_data):
@@ -214,12 +220,13 @@ def add_predictions(input_data):
     if prediction[0] == 0:
         st.write("<span class='diagnosis benign'>Benign</span>", unsafe_allow_html=True)
     else:
-        st.write("<span class='diagnosis malicious'>Malicious</span>", unsafe_allow_html=True)
+        st.write("<span class='diagnosis malignant'>Malignant</span>", unsafe_allow_html=True)
 
     st.write("Probability of being benign: ", model.predict_proba(input_array_scaled)[0][0])
-    st.write("Probability of being malicious: ", model.predict_proba(input_array_scaled)[0][1])
+    st.write("Probability of being malignant: ", model.predict_proba(input_array_scaled)[0][1])
     st.write("This app can assist medical professionals in making a diagnosis, "
             "but should not be used as a substitute for a professional diagnosis.")
+
 # ========== Banco de dados ==========
 def conectar_banco():
     conn = sqlite3.connect("banco.db")
@@ -286,7 +293,7 @@ def verificar_senha():
     else:
         print("Senha incorreta. Acesso negado.")
         return False
-
+    
 def acessar_relatorio(nome_paciente):
     # Buscar relatórios do paciente
     relatorios = buscar_relatorios(nome_paciente)
@@ -419,10 +426,17 @@ def add_predictions_display(input_data):
     return prediction, prob_benigno, prob_maligno
 
 def main():
+    # Carregar estilo CSS
+    if os.path.exists("assets/style.css"):
+        with open("assets/style.css") as f:
+            st.markdown("<style>{}</style>".format(f.read()), unsafe_allow_html=True)
+
     st.title("🧬 MamamIA - Diagnóstico e Relatórios")
 
+    # Menu lateral
     aba = st.sidebar.radio("Navegação", ["Novo exame", "Buscar relatórios"])
 
+    # ----------------- ABA BUSCAR RELATÓRIOS -----------------
     if aba == "Buscar relatórios":
         st.header("Buscar relatórios por paciente")
         nome_busca = st.text_input("Nome da paciente para buscar")
@@ -441,43 +455,44 @@ def main():
                 st.warning("Nenhum relatório encontrado.")
         return
 
-    # aba Novo exame
+    # ----------------- ABA NOVO EXAME -----------------
     st.write("Envie uma imagem ou ajuste manualmente as medidas na barra lateral.")
     col_left, col_right = st.columns([2, 1])
 
-    # sidebar sliders
+    # Sliders na sidebar
     try:
         input_data = add_sidebar()
-    except Exception as e:
+    except Exception:
         st.error("Erro ao construir sliders: verifique data/data.csv")
         input_data = {}
 
+    # ----------------- COLUNA ESQUERDA -----------------
     with col_left:
         st.subheader("Imagem")
+
         uploaded_image = st.file_uploader("Envie a mamografia (jpg/png/jpeg)", type=["jpg", "png", "jpeg"])
-        if uploaded_image:
+
+        if uploaded_image and st.button("Visualizar imagem enviada"):
             st.image(uploaded_image, caption="Imagem carregada", use_column_width=True)
 
         if st.button("Usar imagem para extrair medidas"):
             if not uploaded_image:
                 st.warning("Primeiro envie uma imagem.")
             else:
-                # salvar imagem em disco
                 img_path = os.path.join("imagens", uploaded_image.name)
                 with open(img_path, "wb") as f:
                     f.write(uploaded_image.getbuffer())
                 try:
-                    pil_img = PILImage.open(img_path)
+                    pil_img = Image.open(img_path)
                     medidas_extraidas = extrair_medidas_da_imagem(pil_img)
-                    atualizar_measurements(medidas_extraidas)  # atualiza session_state
+                    atualizar_measurements(medidas_extraidas)
                     st.success("Medições extraídas e atualizadas nos sliders.")
-                    # sobrescreve input_data com as extraídas
                     input_data = medidas_extraidas
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao extrair medidas da imagem: {e}")
 
-        # mostrar radar
+        # Radar chart
         if input_data:
             try:
                 fig = get_radar_chart(input_data)
@@ -485,20 +500,22 @@ def main():
             except Exception as e:
                 st.error(f"Erro ao gerar radar chart: {e}")
 
+    # ----------------- COLUNA DIREITA -----------------
     with col_right:
         st.subheader("Paciente & Relatório")
         nome_paciente = st.text_input("Nome da paciente", value=st.session_state.get("nome_paciente", ""))
         idade = st.number_input("Idade", min_value=0, max_value=120, value=int(st.session_state.get("idade", 0) or 0))
-        tipo_sanguineo = st.text_input("Tipo sanguíneo", value=st.session_state.get("tipo_sanguineo",""))
-        nome_medico = st.text_input("Nome do médico", value=st.session_state.get("nome_medico",""))
+        tipo_sanguineo = st.text_input("Tipo sanguíneo", value=st.session_state.get("tipo_sanguineo", ""))
+        nome_medico = st.text_input("Nome do médico", value=st.session_state.get("nome_medico", ""))
 
         st.markdown("---")
         st.write("Predição com o modelo (usando as medidas atuais)")
         pred, pb, pm = add_predictions_display(input_data) if input_data else (None, None, None)
 
+        # Botão gerar PDF
         if st.button("Gerar relatório PDF"):
             if not input_data:
-                st.warning("Não há medidas para gerar o relatório. Use uma imagem ou ajuste os sliders.")
+                st.warning("Não há medidas para gerar o relatório.")
             else:
                 # criar dict de dados para o PDF
                 imagens_list = []
@@ -518,11 +535,17 @@ def main():
                     "medidas": input_data,
                     "imagens": imagens_list
                 }
+
                 try:
                     pdf_path = gerar_pdf(dados_pdf)
                     st.success(f"PDF gerado: {pdf_path}")
                     with open(pdf_path, "rb") as f:
-                        st.download_button(label="📄 Baixar PDF", data=f, file_name=os.path.basename(pdf_path), mime="application/pdf")
+                        st.download_button(
+                            label="📄 Baixar PDF",
+                            data=f,
+                            file_name=os.path.basename(pdf_path),
+                            mime="application/pdf"
+                        )
                 except Exception as e:
                     st.error(f"Erro ao gerar PDF: {e}")
 
